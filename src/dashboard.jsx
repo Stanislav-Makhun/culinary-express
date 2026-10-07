@@ -23,7 +23,6 @@ export function AppHeader({ active }) {
         </a>
         <nav className="appnav" aria-label="Main">
           <a href="#/dashboard" className={cx(active === 'dashboard' && 'is-on')}>{role === 'vendor' ? 'Bookings' : role === 'staff' ? 'Shifts' : 'Dispatches'}</a>
-          <a href="#/" className={cx(active === 'landing' && 'is-on')}>Website</a>
         </nav>
         <div className="me">
           <div className="me-text">
