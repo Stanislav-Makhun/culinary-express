@@ -25,11 +25,11 @@ export function AppHeader({ active }) {
           <a href="#/dashboard" className={cx(active === 'dashboard' && 'is-on')}>{role === 'vendor' ? 'Bookings' : role === 'staff' ? 'Shifts' : 'Dispatches'}</a>
         </nav>
         <div className="me">
+          <Avatar userId={me} size={38} />
           <div className="me-text">
             <div className="me-name">{u?.name}</div>
             <div className="me-role">{ROLE_LABEL[role]}{role === 'vendor' ? ' · Vendor Page' : ''}</div>
           </div>
-          <Avatar userId={me} size={38} />
         </div>
       </div>
     </header>
