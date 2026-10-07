@@ -2,7 +2,7 @@
 import { update, getState } from './store.js';
 import {
   FIELD_LABELS, USERS, userById, vendorById, quoteFor, defaultChecklist, LIFECYCLE_LABEL,
-  FULFILMENT_LABEL, STAFF_STATUS_LABEL, PARTICIPANT_ROLE_LABEL, PERMISSIONS, stepsFor,
+  FULFILMENT_LABEL, STAFF_STATUS_LABEL, PARTICIPANT_ROLE_LABEL, PERMISSIONS, stepsFor, staffing,
 } from './data.js';
 import { fieldText, fieldLabel } from './fmt.js';
 
@@ -21,6 +21,7 @@ export const changeText = (key, from, to, d) =>
 export function actorId(state, d) {
   const role = state.session.role;
   if (role === 'client') return state.session.userId || 'u-maya';
+  if (role === 'planner') return d?.leadPlannerId || 'u-ava';
   if (role === 'vendor') {
     if (d) {
       const p = d.participants.find((x) => x.role === 'vendor' && userById(x.userId)?.vendorId?.startsWith('v-'));
@@ -39,7 +40,7 @@ export function actorId(state, d) {
 // What the current role may do on this Dispatch.
 export function permissionFor(state, d) {
   const role = state.session.role;
-  if (role === 'client') return 'edit';
+  if (role === 'client' || role === 'planner') return 'edit';
   const me = actorId(state, d);
   const p = d.participants.find((x) => x.userId === me);
   if (role === 'vendor') return p ? p.permission : 'view';
@@ -48,7 +49,7 @@ export function permissionFor(state, d) {
 
 export function isParticipant(state, d) {
   const role = state.session.role;
-  if (role === 'client') return true;
+  if (role === 'client' || role === 'planner') return true;
   const me = actorId(state, d);
   if (role === 'vendor') return d.participants.some((p) => p.userId === me);
   return (d.staff || []).some((s) => (s.assigned || []).includes(me));
@@ -192,24 +193,90 @@ export function approveQuote(id, by) {
   });
 }
 
-function assignStaff(d) {
-  const used = new Set((d.staff || []).flatMap((s) => s.assigned || []));
-  const pool = USERS.filter((u) => u.kind === 'staff');
-  const rows = d.staff || [];
-  rows.forEach((row) => { row.assigned = (row.assigned || []).slice(0, row.count); });
-  const take = (row, u) => {
-    if (u && row.assigned.length < row.count && !used.has(u.id)) {
-      row.assigned.push(u.id);
-      used.add(u.id);
+// ------------------------------------------------------------ staffing
+// After the deposit every seat is open. The Lead Planner offers each seat to a person,
+// and that person accepts or declines on their phone.
+
+// Staff who could take a seat of this role: usual role first, then everyone else.
+export function candidatesFor(state, d, role) {
+  const inThis = new Set((d.staff || []).flatMap((s) => s.assigned || []));
+  const busy = (u) => state.dispatches.find((x) => x.id !== d.id && x.date === d.date && x.status !== 'completed' && (x.staff || []).some((s) => (s.assigned || []).includes(u)));
+  return USERS.filter((u) => u.kind === 'staff' && !inThis.has(u.id))
+    .map((u) => ({ u, match: u.title === role, busy: busy(u.id) }))
+    .sort((a, b) => (b.match - a.match) || (!!a.busy - !!b.busy) || (a.u.id === 'u-diego' ? -1 : b.u.id === 'u-diego' ? 1 : 0) || a.u.name.localeCompare(b.u.name));
+}
+
+export function offerSeat(id, role, userId, by) {
+  update((s) => {
+    const d = find(s, id);
+    const row = d.staff.find((r) => r.role === role);
+    if (!row || (row.assigned || []).length >= row.count || row.assigned.includes(userId)) return;
+    row.assigned.push(userId);
+    d.staffStatus[userId] = 'offered';
+    log(d, by, 'staff', `Offered the ${role} shift to ${userById(userId)?.name}`);
+  });
+}
+
+export function offerSuggested(id, by) {
+  let n = 0;
+  update((s) => {
+    const d = find(s, id);
+    const names = [];
+    (d.staff || []).forEach((row) => {
+      row.assigned = row.assigned || [];
+      while (row.assigned.length < row.count) {
+        const c = candidatesFor(s, d, row.role).find((x) => !x.busy);
+        if (!c) break;
+        row.assigned.push(c.u.id);
+        d.staffStatus[c.u.id] = 'offered';
+        names.push(`${c.u.name.split(' ')[0]} (${row.role})`);
+        n++;
+      }
+    });
+    if (names.length) log(d, by, 'staff', `Offered ${names.length} shift${names.length > 1 ? 's' : ''}: ${names.join(', ')}`);
+  });
+  return n;
+}
+
+function releaseSeat(d, userId) {
+  (d.staff || []).forEach((row) => { row.assigned = (row.assigned || []).filter((u) => u !== userId); });
+  delete d.staffStatus[userId];
+  if (d.checklists) delete d.checklists[userId];
+}
+
+// Demo only: everyone with a pending offer accepts it, as if they replied on their phones.
+export function simulateReplies(id) {
+  update((s) => {
+    const d = find(s, id);
+    (d.staff || []).forEach((row) => (row.assigned || []).forEach((u) => {
+      if (d.staffStatus[u] === 'offered') {
+        d.staffStatus[u] = 'confirmed';
+        log(d, u, 'accept', `${userById(u)?.name} accepted the ${row.role} shift`);
+      }
+    }));
+  });
+}
+
+export function withdrawOffer(id, userId, by) {
+  update((s) => {
+    const d = find(s, id);
+    const role = d.staff.find((r) => (r.assigned || []).includes(userId))?.role;
+    releaseSeat(d, userId);
+    log(d, by, 'staff', `Withdrew the ${role} offer to ${userById(userId)?.name}. Seat reopened.`);
+  });
+}
+
+export function respondToOffer(id, userId, accept) {
+  update((s) => {
+    const d = find(s, id);
+    const role = d.staff.find((r) => (r.assigned || []).includes(userId))?.role;
+    if (accept) {
+      d.staffStatus[userId] = 'confirmed';
+      log(d, userId, 'accept', `${userById(userId)?.name} accepted the ${role} shift`);
+    } else {
+      releaseSeat(d, userId);
+      log(d, userId, 'reject', `${userById(userId)?.name} declined the ${role} shift. Seat reopened for ${userById(d.leadPlannerId)?.name.split(' ')[0]}.`);
     }
-  };
-  // Diego is the demo's staff persona, so he takes a Server seat when there is one.
-  rows.filter((r) => r.role === 'Server').forEach((r) => take(r, userById('u-diego')));
-  // First pass: people whose usual role matches. Second pass: fill any open seats.
-  rows.forEach((row) => pool.filter((u) => u.title === row.role).forEach((u) => take(row, u)));
-  rows.forEach((row) => pool.forEach((u) => take(row, u)));
-  rows.flatMap((s) => s.assigned).forEach((uidv) => {
-    if (!d.staffStatus[uidv]) d.staffStatus[uidv] = 'confirmed';
   });
 }
 
@@ -222,11 +289,8 @@ export function payDeposit(id, by) {
     log(d, 'u-ava', 'status', `Status: ${LIFECYCLE_LABEL[d.status]} → ${LIFECYCLE_LABEL.confirmed}`);
     d.status = 'confirmed';
     d.draftStep = null;
-    if ((d.staff || []).some((x) => x.count > 0)) {
-      assignStaff(d);
-      const names = d.staff.flatMap((x) => x.assigned).map((u) => userById(u)?.name.split(' ')[0]);
-      log(d, 'u-ava', 'edit', `Assigned staff: ${names.join(', ')}`);
-    }
+    const seats = staffing(d).open;
+    if (seats > 0) log(d, 'u-ava', 'staff', `${seats} staff seat${seats > 1 ? 's' : ''} open. Lead Planner is assigning the team.`);
     if (d.vendor?.kind === 'page') d.fulfilment = 'accepted';
     s.session.lastDispatchId = id;
   });

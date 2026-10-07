@@ -151,16 +151,19 @@ export function ServicesFacts({ d }) {
   );
 }
 
-const staffTone = (st) => (['on_way', 'arrived'].includes(st) ? 'amber' : st === 'completed' ? 'sage' : 'neutral');
+const staffTone = (st) => ({ offered: 'amber', on_way: 'sage', arrived: 'sage', completed: 'muted' }[st] || 'neutral');
 
-export function StaffFacts({ d, assigned = true }) {
+// canAssign: the Lead Planner sees Assign on open seats and Withdraw on pending offers.
+export function StaffFacts({ d, assigned = true, canAssign, onAssign, onWithdraw }) {
   const rows = (d.staff || []).filter((s) => s.count > 0);
-  // One table row per seat: assigned people first, then open seats.
+  const paid = !!d.quote?.paid;
+  const planner = userById(d.leadPlannerId)?.name.split(' ')[0] || 'Your Lead Planner';
+  // One table row per seat: people first (offered or accepted), then each open seat.
   const seats = (s) => {
     const people = (s.assigned || []).map((u) => ({ u }));
     const open = s.count - people.length;
-    if (!people.length) return [{ placeholder: 'Assigned after the deposit', n: open }];
-    return open > 0 ? [...people, { placeholder: `${open} open seat${open > 1 ? 's' : ''}`, n: open }] : people;
+    if (!paid && !people.length) return [{ note: 'Seats open after the deposit' }];
+    return [...people, ...Array.from({ length: Math.max(0, open) }, () => ({ open: true }))];
   };
   return (
     <div className="stack">
@@ -192,11 +195,32 @@ export function StaffFacts({ d, assigned = true }) {
                                 <span>{userById(seat.u)?.name}</span>
                               </span>
                             </td>
-                            <td><StatusPill tone={staffTone(d.staffStatus?.[seat.u])}>{STAFF_STATUS_LABEL[d.staffStatus?.[seat.u] || 'assigned']}</StatusPill></td>
+                            <td>
+                              <span className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                                <StatusPill tone={staffTone(d.staffStatus?.[seat.u])}>{STAFF_STATUS_LABEL[d.staffStatus?.[seat.u] || 'assigned']}</StatusPill>
+                                {canAssign && d.staffStatus?.[seat.u] === 'offered' ? (
+                                  <button type="button" className="edit-link" style={{ margin: 0 }} onClick={() => onWithdraw(seat.u)}>Withdraw</button>
+                                ) : null}
+                              </span>
+                            </td>
+                          </>
+                        ) : seat.open ? (
+                          <>
+                            <td className="staff-person">
+                              <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}>
+                                <span className="seat-open" aria-hidden="true" />
+                                <span className="muted">Open seat</span>
+                              </span>
+                            </td>
+                            <td>
+                              {canAssign
+                                ? <Button size="sm" variant="secondary" icon="plus" onClick={() => onAssign(s.role)}>Assign</Button>
+                                : <span className="small muted">{planner} is assigning</span>}
+                            </td>
                           </>
                         ) : (
                           <>
-                            <td className="muted small staff-person">{seat.placeholder}</td>
+                            <td className="muted small staff-person">{seat.note}</td>
                             <td className="muted small">—</td>
                           </>
                         )

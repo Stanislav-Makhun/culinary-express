@@ -3,7 +3,7 @@
 import { userById, vendorById, timelineFor, callTimeFor, STAFF_STATUS_LABEL } from './data.js';
 import { fmtDate, fmtTime, fmtRange } from './fmt.js';
 import { useStore, toast } from './store.js';
-import { setStaffStatus, toggleCheck, checklistFor, actorId, setSession } from './actions.js';
+import { setStaffStatus, toggleCheck, checklistFor, actorId, setSession, respondToOffer } from './actions.js';
 import { Button, Icon, Emblem, StatusPill, Checkbox, Avatar, cx } from './ui.jsx';
 
 const FLOW = ['confirmed', 'on_way', 'arrived', 'completed'];
@@ -99,6 +99,17 @@ function Shift({ d, me, row }) {
         <StatusPill tone={status === 'completed' ? 'sage' : status === 'confirmed' ? 'neutral' : 'amber'}>{STAFF_STATUS_LABEL[status]}</StatusPill>
       </div>
 
+      {status === 'offered' ? (
+        <section className="offer-card" aria-label="Shift offer">
+          <Icon name="sparkle" size={22} />
+          <div>
+            <p className="eyebrow">New shift offer</p>
+            <h2>{userById(d.leadPlannerId)?.name.split(' ')[0]} offered you a {row.role} shift</h2>
+            <p className="small muted" style={{ marginTop: 6 }}>Check the details below, then accept or decline. If you decline, the seat goes back to the Lead Planner.</p>
+          </div>
+        </section>
+      ) : null}
+
       <section className="sm-ticket stub" aria-label="Assignment">
         <div className="stub-sec">
           <div className="sm-role"><span className="sm-role-name">{row.role}</span><span className="num tiny" style={{ color: '#b9b2a5' }}>{d.ticketNo}</span></div>
@@ -129,6 +140,7 @@ function Shift({ d, me, row }) {
         </ol>
       </section>
 
+      {status !== 'offered' ? (
       <section className="sm-card" aria-label="Checklist">
         <div className="sm-card-title">Checklist <span className="sm-progress">{done}/{list.length}</span></div>
         <div className="sm-check">
@@ -137,6 +149,7 @@ function Shift({ d, me, row }) {
           ))}
         </div>
       </section>
+      ) : null}
 
       {d.materials?.length ? (
         <section className="sm-card" aria-label="Materials">
@@ -179,6 +192,16 @@ function Shift({ d, me, row }) {
 
 function Dock({ d, me }) {
   const status = d.staffStatus?.[me] || 'confirmed';
+  if (status === 'offered') {
+    return (
+      <div className="sm-dock">
+        <div className="sm-offer-actions">
+          <Button variant="secondary" className="sm-primary" onClick={() => { respondToOffer(d.id, me, false); toast('Shift declined. The Lead Planner has been told.'); }}>Decline</Button>
+          <Button variant="primary" className="sm-primary" icon="check" onClick={() => { respondToOffer(d.id, me, true); toast("Shift accepted. You're on the team."); }}>Accept shift</Button>
+        </div>
+      </div>
+    );
+  }
   const a = ACTION[status];
   const idx = FLOW.indexOf(status);
   const undo = () => setStaffStatus(d.id, me, FLOW[Math.max(0, idx - 1)]);

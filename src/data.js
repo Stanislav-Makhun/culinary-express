@@ -122,12 +122,24 @@ export const FULFILMENT_LABEL = {
 };
 
 export const STAFF_STATUS_LABEL = {
+  offered: 'Offered',
   assigned: 'Assigned',
   confirmed: 'Confirmed',
   on_way: 'On the way',
   arrived: 'Arrived',
   completed: 'Shift complete',
 };
+// A seat counts as filled once the person has accepted the offer.
+export const ACCEPTED = ['confirmed', 'on_way', 'arrived', 'completed'];
+
+// Open, offered and confirmed seats for a Dispatch.
+export function staffing(d) {
+  const total = (d.staff || []).reduce((n, s) => n + s.count, 0);
+  const people = (d.staff || []).flatMap((s) => s.assigned || []);
+  const accepted = people.filter((u) => ACCEPTED.includes(d.staffStatus?.[u])).length;
+  const offered = people.length - accepted;
+  return { total, accepted, offered, open: total - people.length };
+}
 
 // ---------------------------------------------------------------- people & vendors
 
@@ -331,7 +343,8 @@ export function defaultChecklist(d) {
 }
 
 export function autopilotCheckpoints(d) {
-  const staffAssigned = (d.staff || []).every((s) => (s.assigned || []).length >= s.count);
+  const st = staffing(d);
+  const staffAssigned = st.open === 0 && st.offered === 0;
   return [
     { label: 'Menu and vendor confirmed', done: !!d.vendor && (d.menuItems || []).length > 0 },
     { label: 'Deposit received', done: !!d.quote?.paid },

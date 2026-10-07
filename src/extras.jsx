@@ -143,13 +143,13 @@ export const ASSUMPTIONS = [
   ['Lifecycle triggers', 'Inquiry when Basics is saved · Planning once a vendor is chosen · Quoted when the quote is approved · Confirmed when the deposit is paid · Live on “Start event” · Completed on “Mark completed”.'],
   ['Pricing', 'Mock: menu prices per portion, staff hourly for event hours plus 1 hour setup, 8% platform fee, 8.25% tax on food and services, 30% deposit, balance due 5 days out. USD.'],
   ['Payments', 'Square is mocked. The test card is prefilled and nothing is charged.'],
-  ['Staff assignment', 'Staff are auto-assigned from a seeded pool when the deposit is paid. In production the Lead Planner assigns them.'],
+  ['Staff assignment', 'The client chooses roles and counts. After the deposit every seat is Open. The Lead Planner offers each seat from the staff pool (usual role first; people booked elsewhere that day are greyed out). The person accepts or declines on their phone: Offered → Confirmed, or the seat reopens. Not yet decided: offer timeouts and backup staff.'],
   ['Staff call time', 'Two hours before the start time for every role.'],
   ['Vendor participant', 'Choosing a Vendor Page adds that restaurant to the Ticket as Vendor · Can suggest.'],
   ['Fulfilment status', 'Awaiting vendor → Accepted → Preparing → Out for delivery → Delivered & set. A Vendor role action, independent of permission.'],
   ['Changing type', 'Switching to a type that hides steps clears the data in those steps, so the quote never includes hidden items.'],
   ['Unpaid quote edits', 'Editing a Dispatch after its quote is approved (but before payment) moves it back to Planning so the quote is approved again.'],
-  ['Demo personas', 'Client = Maya Chen. Vendor = the restaurant on the Ticket you are viewing (Bella Cucina by default). Staff = Diego Ramos when assigned, otherwise the first assigned person.'],
+  ['Demo personas', 'Client = Maya Chen. Planner = Ava Laurent, Lead Planner. Vendor = the restaurant on the Ticket you are viewing (Bella Cucina by default). Staff = Diego Ramos when assigned, otherwise the first assigned person.'],
   ['Location data', 'Seed venues are fictional addresses in Portland, OR. Phone numbers use the 555 range.'],
   ['Messages and email', 'Messages, invitations and receipts are stored in this browser only. Nothing is sent.'],
   ['Compare screen', 'Today\'s form has an unlabelled field holding “10”. Its meaning is unclear, so the rebuilt Ticket does not guess at it. “Tasty” becomes a menu item for the 100 guests.'],
@@ -164,11 +164,12 @@ const SCRIPT = [
   ['Vendor', 'Pick Bella Cucina. (Mention the Manual Vendor Template below the list.) Continue.'],
   ['Food → Materials', 'Use “Start with a set menu”, then the staff suggestion chip, add two guests, tick a few materials. Watch the live summary and budget bar.'],
   ['Review & Quote', 'Every section is labelled with an Edit link. Press Approve quote & pay deposit.'],
-  ['Checkout', 'Mock Square, clearly labelled. Pay. The confirmation shows assigned staff. Open the Ticket.'],
+  ['Checkout', 'Mock Square, clearly labelled. Pay. The confirmation explains that staffing comes next. Open the Ticket.'],
   ['Ticket', 'Walk the header: lifecycle route, next action, ticket stub. Open Share, show roles, permissions and link access.'],
   ['Suggest', 'In the demo toolbar switch to Vendor. On Event basics press Suggest edit, change Guest count 80 → 70, Send suggestion.'],
   ['Accept', 'Switch to Client. The Overview shows “80 guests → 70 guests · suggested by Bella Cucina”. Accept, then open Activity.'],
-  ['Staff', 'Switch to Staff (or press Staff mobile). Tick a checklist item, press I’m on my way, then I’ve arrived. Back on the Ticket, Activity shows each update.'],
+  ['Assign staff', 'Switch to Planner (Ava Laurent). Press “Assign staff”, then Assign on a Server seat and Offer shift to Diego Ramos. Then “Offer open seats to suggested staff” fills the rest. Every seat shows Offered.'],
+  ['Staff accepts', 'Switch to Staff. Diego sees the offer: Accept shift, tick a checklist item, I’m on my way, I’ve arrived. As Client, the Staff tab and Activity show each step. “Demo: simulate staff replies” accepts the remaining offers so the Staff confirmed checkpoint completes.'],
 ];
 
 export function FieldCoverage() {
@@ -205,6 +206,7 @@ export function About({ open, onClose }) {
 }
 
 // ------------------------------------------------------------ demo toolbar
+const ROLE_NAMES = { client: 'Client', planner: 'Planner', vendor: 'Vendor', staff: 'Staff' };
 export function DemoToolbar({ route }) {
   const state = useStore();
   const [open, setOpen] = useState(false);
@@ -232,7 +234,7 @@ export function DemoToolbar({ route }) {
     } else if (p0 === 'staff' && p1) go(`/ticket/${p1}/overview`);
     else if (p0 === 'edit' || p0 === 'builder') go(`/ticket/${p1}/overview`);
     else if (p0 === 'home') go('/dashboard');
-    toast(`Viewing as ${r === 'client' ? 'Client · Maya Chen' : r === 'vendor' ? 'Vendor' : 'Staff'}`);
+    toast(`Viewing as ${{ client: 'Client · Maya Chen', planner: 'Lead Planner · Ava Laurent', vendor: 'Vendor', staff: 'Staff' }[r]}`);
   };
   const builderTarget = () => {
     const draft = [...state.dispatches].reverse().find((d) => ['inquiry', 'planning', 'quoted'].includes(d.status));
@@ -249,8 +251,8 @@ export function DemoToolbar({ route }) {
         <div className="demo-panel" role="dialog" aria-label="Demo controls">
           <div>
             <h4>View as</h4>
-            <div className="demo-roles" role="radiogroup" aria-label="Role">
-              {['client', 'vendor', 'staff'].map((r) => (
+            <div className="demo-roles four" role="radiogroup" aria-label="Role">
+              {['client', 'planner', 'vendor', 'staff'].map((r) => (
                 <button key={r} type="button" role="radio" aria-checked={role === r} className={cx(role === r && 'is-on')} onClick={() => switchRole(r)}>
                   {r[0].toUpperCase() + r.slice(1)}
                 </button>
@@ -285,7 +287,7 @@ export function DemoToolbar({ route }) {
       ) : null}
       <button type="button" className="demo-pill" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="badge">Demo</span>
-        <span>{role === 'client' ? 'Client' : role === 'vendor' ? 'Vendor' : 'Staff'}</span>
+        <span>{ROLE_NAMES[role]}</span>
         <Icon name={open ? 'down' : 'up'} size={16} />
       </button>
       <About open={about} onClose={() => setAbout(false)} />

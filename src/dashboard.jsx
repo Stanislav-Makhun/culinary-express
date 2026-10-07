@@ -1,12 +1,12 @@
 // App header and the role dashboards. Client sees one list of Dispatches grouped by status.
-import { TYPES, STEPS, userById, vendorById, callTimeFor } from './data.js';
+import { TYPES, STEPS, userById, vendorById, callTimeFor, staffing } from './data.js';
 import { fmtDate, fmtTime, plural, whenLabel } from './fmt.js';
 import { useStore } from './store.js';
 import { createDispatch, peopleWithAccess, actorId, hideSeeds } from './actions.js';
 import { go } from './router.js';
 import { Button, Icon, Emblem, Wordmark, Photo, StatusPill, AvatarStack, Avatar, Empty, cx } from './ui.jsx';
 
-const ROLE_LABEL = { client: 'Client', vendor: 'Vendor', staff: 'Staff' };
+const ROLE_LABEL = { client: 'Client', planner: 'Lead Planner · Cülinary Expréss', vendor: 'Vendor', staff: 'Staff' };
 
 export function AppHeader({ active }) {
   const state = useStore();
@@ -48,6 +48,9 @@ function nextLine(d) {
   if (pending) return { text: `${plural(pending, 'suggestion')} to review`, alert: true };
   if (d.status === 'inquiry' || d.status === 'planning') return { text: `Continue: ${STEPS.find((s) => s.key === (d.draftStep || 'basics'))?.label}` };
   if (d.status === 'quoted') return { text: 'Deposit due', alert: true };
+  const st = staffing(d);
+  if (d.status === 'confirmed' && st.open > 0) return { text: `${plural(st.open, 'seat')} to fill`, alert: true };
+  if (d.status === 'confirmed' && st.offered > 0) return { text: `Staff ${st.accepted}/${st.total} accepted` };
   if (d.status === 'live') return { text: 'Happening now' };
   if (d.status === 'confirmed') return { text: whenLabel(d.date) };
   return { text: 'View summary' };
@@ -74,7 +77,7 @@ export function DispatchCard({ d, i, href, role }) {
         <p className="dcard-loc"><Icon name="pin" size={14} />{d.location || 'Venue not set yet'}</p>
         <div className="dcard-foot">
           <AvatarStack people={peopleWithAccess(d)} max={4} size={28} />
-          <span className={cx('dcard-next', n.alert && 'is-alert')}>{role === 'vendor' ? (d.suggestions.some((s) => s.status === 'pending') ? 'Suggestion pending' : whenLabel(d.date)) : n.text}<Icon name="right" size={14} /></span>
+          <span className={cx('dcard-next', (n.alert || (role === 'staff' && d.staffStatus?.['u-diego'] === 'offered')) && 'is-alert')}>{role === 'vendor' ? (d.suggestions.some((s) => s.status === 'pending') ? 'Suggestion pending' : whenLabel(d.date)) : role === 'staff' ? (d.staffStatus?.['u-diego'] === 'offered' ? 'Shift offer · respond' : whenLabel(d.date)) : n.text}<Icon name="right" size={14} /></span>
         </div>
       </div>
     </a>
@@ -89,7 +92,8 @@ const greeting = () => {
 export function ClientDashboard({ forceEmpty }) {
   const state = useStore();
   const list = forceEmpty || state.session.hideSeeds ? [] : state.dispatches;
-  const u = userById(state.session.userId || 'u-maya');
+  const planner = state.session.role === 'planner';
+  const u = userById(planner ? 'u-ava' : state.session.userId || 'u-maya');
   const live = list.filter((d) => d.status === 'live').length;
   const create = () => go(`/builder/${createDispatch()}/basics`);
   return (
@@ -160,19 +164,19 @@ export function VendorDashboard() {
 
 export function StaffShifts() {
   const state = useStore();
-  const shifts = state.dispatches.filter((d) => (d.staff || []).some((s) => (s.assigned || []).length) && d.status !== 'completed');
+  const shifts = state.dispatches.filter((d) => (d.staff || []).some((s) => (s.assigned || []).includes('u-diego')) && d.status !== 'completed');
   return (
     <div className="page page-narrow">
       <div className="dash-head">
         <div>
           <p className="eyebrow">Staff</p>
           <h1 className="h1">Your shifts</h1>
-          <p className="muted">Open a shift for the call time, address, contacts and checklist.</p>
+          <p className="muted">Shift offers and accepted shifts for Diego Ramos. Open one for the call time, address, contacts and checklist.</p>
         </div>
       </div>
       {shifts.length ? (
         <div className="cards" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))' }}>
-          {shifts.map((d, i) => <DispatchCard key={d.id} d={d} i={i} href={`#/staff/${d.id}`} />)}
+          {shifts.map((d, i) => <DispatchCard key={d.id} d={d} i={i} href={`#/staff/${d.id}`} role="staff" />)}
         </div>
       ) : <Empty title="No shifts yet" body="Shifts appear once a Lead Planner assigns you to a confirmed Dispatch." />}
     </div>

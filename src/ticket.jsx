@@ -2,13 +2,13 @@
 // one next action and Share; tabs for every area; a right rail for people, Autopilot and messages.
 import {
   TYPES, stepsFor, userById, vendorById, quoteFor, timelineFor, autopilotCheckpoints,
-  PARTICIPANT_ROLE_LABEL, PERMISSIONS, FULFILMENT, FULFILMENT_LABEL, STEPS, callTimeFor,
+  PARTICIPANT_ROLE_LABEL, PERMISSIONS, FULFILMENT, FULFILMENT_LABEL, STEPS, callTimeFor, staffing, ACCEPTED,
 } from './data.js';
 import { fmtDate, fmtTime, fmtRange, fmtStamp, money, plural } from './fmt.js';
 import { useStore, toast } from './store.js';
 import {
   actorId, permissionFor, peopleWithAccess, saveFields, suggestFields, setStatus, setFulfilment,
-  toggleAutopilot, sendMessage, isParticipant,
+  toggleAutopilot, sendMessage, isParticipant, candidatesFor, offerSeat, offerSuggested, withdrawOffer, simulateReplies,
 } from './actions.js';
 import { go } from './router.js';
 import {
@@ -22,7 +22,7 @@ import { ShareDialog } from './share.jsx';
 
 const { useState, useEffect } = React;
 
-const ACT_ICON = { create: 'plus', edit: 'edit', suggest: 'edit', accept: 'check', reject: 'x', status: 'route', payment: 'card', share: 'share' };
+const ACT_ICON = { create: 'plus', edit: 'edit', suggest: 'edit', accept: 'check', reject: 'x', status: 'route', payment: 'card', share: 'share', staff: 'users' };
 const GALLERY = { glasshouse: ['glasshouse', 'dinner', 'florals'], loft: ['loft', 'grill', 'staff'], buffet: ['buffet', 'spice', 'office'], garden: ['garden', 'dinner', 'trattoria'] };
 
 export function TicketPage({ id, tab }) {
@@ -67,7 +67,18 @@ function nextActionFor(d, role, perm) {
     if (['suggest', 'edit'].includes(perm) && d.status !== 'completed') return { kind: 'suggest', label: 'Suggest a change', icon: 'edit', title: 'Something to adjust?', body: `Use the Edit buttons on any section. Your edits reach ${owner} as suggestions.` };
     return { kind: 'none', title: 'Nothing needs you right now', body: 'Updates appear in Activity.' };
   }
-  if (pending.length) {
+  const st = staffing(d);
+  const lp = userById(d.leadPlannerId)?.name.split(' ')[0];
+  if (role === 'planner') {
+    if (pending.length) return { kind: 'none', title: `Waiting for ${owner}`, body: `${owner} has ${plural(pending.length, 'suggestion')} to review on this Ticket.` };
+    if (['inquiry', 'planning', 'quoted'].includes(d.status)) return { kind: 'none', title: `${owner} is still planning`, body: 'Staff seats open once the deposit is paid. Autopilot tracks the checkpoints until then.' };
+    if (d.status === 'confirmed' && st.open > 0) return { kind: 'assign', label: `Assign staff · ${st.open} open`, icon: 'users', title: `${plural(st.open, 'seat')} to fill`, body: 'Offer each seat to someone from the staff pool. They accept or decline on their phone.' };
+    if (d.status === 'confirmed' && st.offered > 0) return { kind: 'staffTab', label: 'View staffing', icon: 'users', title: `Waiting on ${plural(st.offered, 'offer')}`, body: `${st.accepted} of ${st.total} seats accepted. Withdraw an offer to give the seat to someone else.` };
+  }
+  if (role === 'client' && d.status === 'confirmed' && (st.open > 0 || st.offered > 0)) {
+    return { kind: 'staffTab', label: 'See staffing', icon: 'users', title: `${lp} is assembling your team`, body: `${st.accepted} of ${st.total} seats accepted. Each person confirms the shift on their phone.` };
+  }
+  if (pending.length && role === 'client') {
     const by = userById(pending[0].by)?.name;
     return { kind: 'review', label: pending.length > 1 ? `Review ${pending.length} suggestions` : 'Review suggestion', icon: 'edit', title: `${by} suggested a change`, body: 'Accepting updates the Ticket. Both outcomes are logged in Activity.' };
   }
@@ -79,7 +90,7 @@ function nextActionFor(d, role, perm) {
       return { kind: 'continue', label: 'Continue planning', icon: 'arrowRight', title: 'Finish planning', body: `Next step: ${step?.label}. Approve the quote at the end to lock the date.` };
     }
     case 'quoted':
-      return { kind: 'pay', label: 'Pay deposit', icon: 'card', title: 'Pay the deposit to confirm', body: `${money(q.deposit)} locks the date with ${vendorNameOf(d)}. Staff are assigned straight after.` };
+      return { kind: 'pay', label: 'Pay deposit', icon: 'card', title: 'Pay the deposit to confirm', body: `${money(q.deposit)} locks the date with ${vendorNameOf(d)}. Your Lead Planner starts staffing straight after.` };
     case 'confirmed':
       return { kind: 'start', label: 'Start event', icon: 'play', title: 'Confirmed and ready', body: 'Start the event when the team arrives. Status updates from staff and vendors flow into Activity.' };
     case 'live':
@@ -99,6 +110,8 @@ export function TicketView({ d, tab, onTab, readOnly }) {
   const [share, setShare] = useState(false);
   const [msgs, setMsgs] = useState(false);
   const [quick, setQuick] = useState(null);
+  const [assignRole, setAssignRole] = useState(null);
+  const canAssign = !readOnly && role === 'planner' && ['confirmed', 'live'].includes(d.status);
   const people = peopleWithAccess(d);
   const pending = d.suggestions.filter((s) => s.status === 'pending');
   const visible = stepsFor(d.type).map((s) => s.key);
@@ -116,6 +129,8 @@ export function TicketView({ d, tab, onTab, readOnly }) {
       case 'start': setStatus(d.id, 'live', actor); toast('Event is live'); break;
       case 'complete': setStatus(d.id, 'completed', actor); toast('Event completed'); break;
       case 'docs': onTab('documents'); break;
+      case 'staffTab': onTab('staff'); break;
+      case 'assign': onTab('staff'); break;
       case 'suggest': go(`/edit/${d.id}/basics?ret=overview`); break;
       case 'fulfil': setFulfilment(d.id, na.next, actor); toast(`Fulfilment: ${FULFILMENT_LABEL[na.next]}`); break;
       default:
@@ -141,6 +156,12 @@ export function TicketView({ d, tab, onTab, readOnly }) {
   return (
     <TicketCtx.Provider value={{ d, canResolve: isOwner, actor, readOnly }}>
       <div className="tk">
+        {!readOnly && role === 'planner' ? (
+          <div className="tk-banner">
+            <Icon name="eye" />
+            <span>Viewing as <strong>{userById(actor)?.name}</strong> · Lead Planner · Can edit. You assign staff and run the checkpoints.</span>
+          </div>
+        ) : null}
         {!readOnly && role === 'vendor' ? (
           <div className="tk-banner">
             <Icon name="eye" />
@@ -224,7 +245,11 @@ export function TicketView({ d, tab, onTab, readOnly }) {
               ) : null}
               {current === 'staff' ? (
                 <>
-                  <Card title="Staff" action={<EditBtn step="staff" />}><StaffFacts d={d} /></Card>
+                  {d.quote?.paid && staffing(d).total ? <StaffingCard d={d} canAssign={canAssign} actor={actor} /> : null}
+                  <Card title="Staff" action={<EditBtn step="staff" />}>
+                    <StaffFacts d={d} canAssign={canAssign} onAssign={setAssignRole}
+                      onWithdraw={(u) => { withdrawOffer(d.id, u, actor); toast('Offer withdrawn. The seat is open again.'); }} />
+                  </Card>
                   {!readOnly ? (
                     <div className="row">
                       <Button variant="secondary" icon="phone" href={`#/staff/${d.id}`}>Open the Staff mobile view</Button>
@@ -267,7 +292,7 @@ export function TicketView({ d, tab, onTab, readOnly }) {
                 ) : null}
               </div>
             </Card>
-            <AutopilotCard d={d} canToggle={isOwner} actor={actor} />
+            <AutopilotCard d={d} canToggle={isOwner || (role === 'planner' && !readOnly)} actor={actor} />
             <button type="button" className="msg-entry" onClick={() => !readOnly && setMsgs(true)} disabled={readOnly}>
               <Icon name="message" size={22} />
               <span className="grow" style={{ minWidth: 0 }}>
@@ -285,9 +310,83 @@ export function TicketView({ d, tab, onTab, readOnly }) {
           <ShareDialog open={share} onClose={() => setShare(false)} d={d} actor={actor} />
           <MessagesDrawer open={msgs} onClose={() => setMsgs(false)} d={d} actor={actor} />
           <QuickEdit kind={quick} onClose={() => setQuick(null)} d={d} actor={actor} suggest={perm === 'suggest'} />
+          <AssignDialog role={assignRole} onClose={() => setAssignRole(null)} d={d} actor={actor} />
         </>
       ) : null}
     </TicketCtx.Provider>
+  );
+}
+
+function StaffingCard({ d, canAssign, actor }) {
+  const st = staffing(d);
+  const people = (d.staff || []).flatMap((s) => s.assigned || []);
+  const accepted = people.filter((u) => ACCEPTED.includes(d.staffStatus?.[u]));
+  const offered = people.filter((u) => d.staffStatus?.[u] === 'offered');
+  const lp = userById(d.leadPlannerId)?.name;
+  const bars = [...accepted.map(() => 'is-on'), ...offered.map(() => 'is-offered'), ...Array.from({ length: st.open }, () => '')];
+  return (
+    <section className="card">
+      <div className="row-between">
+        <div>
+          <p className="eyebrow">Staffing · {lp}, Lead Planner</p>
+          <h3 className="card-title" style={{ marginTop: 6 }}>{st.accepted} of {st.total} seats accepted</h3>
+        </div>
+        {canAssign && st.open > 0 ? (
+          <Button variant="primary" icon="users" onClick={() => { const n = offerSuggested(d.id, actor); toast(n ? `Offered ${plural(n, 'shift')} to suggested staff` : 'No free staff match the open seats'); }}>
+            Offer open seats to suggested staff
+          </Button>
+        ) : null}
+      </div>
+      <div className="staffing-bar" aria-hidden="true">{bars.map((c, i) => <span key={i} className={c} />)}</div>
+      <div className="row-between" style={{ marginTop: 10 }}>
+        <p className="small muted">
+          {st.open ? `${plural(st.open, 'open seat')}` : 'No open seats'} · {plural(st.offered, 'offer')} waiting · each person accepts or declines on their phone.
+        </p>
+        {st.offered > 0 ? (
+          <button type="button" className="edit-link" style={{ margin: 0 }} onClick={() => { simulateReplies(d.id); toast('Demo: the other offered staff accepted'); }}>
+            <Icon name="info" size={14} />Demo: simulate staff replies
+          </button>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function AssignDialog({ role, onClose, d, actor }) {
+  const state = useStore();
+  if (!role) return null;
+  const row = d.staff.find((r) => r.role === role);
+  const open = row ? row.count - (row.assigned || []).length : 0;
+  const list = candidatesFor(state, d, role);
+  const match = list.filter((c) => c.match);
+  const other = list.filter((c) => !c.match);
+  const offer = (u) => {
+    offerSeat(d.id, role, u.id, actor);
+    toast(`${role} shift offered to ${u.name.split(' ')[0]}. They accept on their phone.`);
+    if (open <= 1) onClose();
+  };
+  const Row = ({ c }) => (
+    <div className={cx('picker-row', c.busy && 'is-busy')}>
+      <Avatar userId={c.u.id} size={38} />
+      <div className="grow">
+        <div className="person-name">{c.u.name}</div>
+        <div className="person-role">{c.busy ? `Booked that day · ${c.busy.name}` : `Usually ${c.u.title} · ${c.u.phone}`}</div>
+      </div>
+      <Button size="sm" variant={c.match ? 'primary' : 'secondary'} disabled={!!c.busy} onClick={() => offer(c.u)}>Offer shift</Button>
+    </div>
+  );
+  return (
+    <Dialog open onClose={onClose} title={`Assign ${role}`}
+      description={`${plural(open, 'open seat')} on ${d.name}, ${fmtDate(d.date, 'day')} · call ${fmtTime(callTimeFor(d))}. The person gets the offer on their phone and accepts or declines.`}>
+      {open <= 0 ? <p className="muted">All {role} seats are filled.</p> : (
+        <div className="stack" style={{ gap: 4 }}>
+          {match.length ? <p className="eyebrow">Usually work as {role}</p> : null}
+          <div>{match.map((c) => <Row key={c.u.id} c={c} />)}</div>
+          {other.length ? <p className="eyebrow" style={{ marginTop: 12 }}>Other staff</p> : null}
+          <div>{other.map((c) => <Row key={c.u.id} c={c} />)}</div>
+        </div>
+      )}
+    </Dialog>
   );
 }
 

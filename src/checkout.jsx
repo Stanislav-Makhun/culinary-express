@@ -93,7 +93,6 @@ export function Confirmed({ id }) {
   const state = useStore();
   const d = state.dispatches.find((x) => x.id === id);
   if (!d) return null;
-  const staff = (d.staff || []).flatMap((s) => s.assigned || []);
   const lp = userById(d.leadPlannerId);
   return (
     <div className="page page-narrow">
@@ -109,12 +108,12 @@ export function Confirmed({ id }) {
           </div>
           <div className="stub-perf" />
           <div className="stub-sec"><LifecycleTracker status={d.status} compact /></div>
-          {staff.length ? (
+          {(d.staff || []).some((x) => x.count > 0) ? (
             <>
               <div className="stub-perf" />
               <div className="stub-sec">
-                <p className="eyebrow" style={{ marginBottom: 6 }}>Staff assigned</p>
-                <p className="small">{staff.map((u) => userById(u)?.name).join(', ')}</p>
+                <p className="eyebrow" style={{ marginBottom: 6 }}>Next: staffing</p>
+                <p className="small">{lp.name} now offers each of the {(d.staff || []).reduce((n, x) => n + x.count, 0)} staff seats. Each person accepts on their phone, and you can follow it on the Ticket's Staff tab.</p>
               </div>
             </>
           ) : null}
