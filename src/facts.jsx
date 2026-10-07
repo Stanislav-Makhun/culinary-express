@@ -151,43 +151,62 @@ export function ServicesFacts({ d }) {
   );
 }
 
+const staffTone = (st) => (['on_way', 'arrived'].includes(st) ? 'amber' : st === 'completed' ? 'sage' : 'neutral');
+
 export function StaffFacts({ d, assigned = true }) {
   const rows = (d.staff || []).filter((s) => s.count > 0);
+  // One table row per seat: assigned people first, then open seats.
+  const seats = (s) => {
+    const people = (s.assigned || []).map((u) => ({ u }));
+    const open = s.count - people.length;
+    if (!people.length) return [{ placeholder: 'Assigned after the deposit', n: open }];
+    return open > 0 ? [...people, { placeholder: `${open} open seat${open > 1 ? 's' : ''}`, n: open }] : people;
+  };
   return (
     <div className="stack">
       {rows.length ? (
         <div className="table-scroll">
-          <table className="data-table">
+          <table className="data-table staff-table">
             <thead>
-              <tr><th>Role</th><th className="r">Count</th>{assigned ? <th>Assigned</th> : null}<th className="r">Rate</th></tr>
+              <tr>
+                <th>Role</th>
+                <th className="r">Count</th>
+                {assigned ? <><th>Person</th><th>Status</th></> : null}
+                <th className="r">Rate</th>
+              </tr>
             </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.role}>
-                  <td>{s.role}</td>
-                  <td className="r num">{s.count}</td>
-                  {assigned ? (
-                    <td>
-                      {(s.assigned || []).length ? (
-                        <div className="stack" style={{ gap: 8 }}>
-                          {s.assigned.map((u) => (
-                            <div className="row" key={u} style={{ gap: 8, flexWrap: 'nowrap' }}>
-                              <Avatar userId={u} size={26} />
-                              <span className="small">{userById(u)?.name}</span>
-                              <StatusPill tone={['on_way', 'arrived'].includes(d.staffStatus?.[u]) ? 'amber' : d.staffStatus?.[u] === 'completed' ? 'sage' : 'neutral'}>
-                                {STAFF_STATUS_LABEL[d.staffStatus?.[u] || 'assigned']}
-                              </StatusPill>
-                            </div>
-                          ))}
-                          {s.assigned.length < s.count ? <span className="tiny muted">{s.count - s.assigned.length} open</span> : null}
-                        </div>
-                      ) : <span className="small muted">Assigned after the deposit</span>}
-                    </td>
-                  ) : null}
-                  <td className="r num">{money(STAFF_RATE[s.role])}/h</td>
-                </tr>
-              ))}
-            </tbody>
+            {rows.map((s) => {
+              const list = assigned ? seats(s) : [null];
+              return (
+                <tbody key={s.role} className="staff-group">
+                  {list.map((seat, i) => (
+                    <tr key={i}>
+                      {i === 0 ? <td rowSpan={list.length} className="staff-role">{s.role}</td> : null}
+                      {i === 0 ? <td rowSpan={list.length} className="r num staff-role">{s.count}</td> : null}
+                      {assigned ? (
+                        seat.u ? (
+                          <>
+                            <td className="staff-person">
+                              <span className="row" style={{ gap: 10, flexWrap: 'nowrap' }}>
+                                <Avatar userId={seat.u} size={28} />
+                                <span>{userById(seat.u)?.name}</span>
+                              </span>
+                            </td>
+                            <td><StatusPill tone={staffTone(d.staffStatus?.[seat.u])}>{STAFF_STATUS_LABEL[d.staffStatus?.[seat.u] || 'assigned']}</StatusPill></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="muted small staff-person">{seat.placeholder}</td>
+                            <td className="muted small">—</td>
+                          </>
+                        )
+                      ) : null}
+                      {i === 0 ? <td rowSpan={list.length} className="r num staff-role">{money(STAFF_RATE[s.role])}/h</td> : null}
+                    </tr>
+                  ))}
+                </tbody>
+              );
+            })}
           </table>
         </div>
       ) : <p className="muted">No staff requested.</p>}

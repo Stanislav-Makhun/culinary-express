@@ -623,6 +623,13 @@ textarea.input:focus, select.input:focus { border-color: var(--ink); box-shadow:
 .data-table tr:last-child td { border-bottom: 0; }
 .data-table .r { text-align: right; padding-right: 0; }
 .table-scroll { overflow-x: auto; }
+.data-table th + th, .data-table td + td { padding-left: 16px; }
+.staff-table { min-width: 520px; }
+.staff-table td { padding-top: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--hair); }
+.staff-table td.staff-person { padding-left: 16px; }
+.staff-table .staff-role { vertical-align: top; padding-top: 13px; font-weight: 500; }
+.staff-table tbody.staff-group tr:last-child td, .staff-table td.staff-role { border-bottom: 1px solid var(--hair-2); }
+.staff-table tbody.staff-group:last-child tr:last-child td, .staff-table tbody.staff-group:last-child td.staff-role { border-bottom: 0; }
 
 /* ---------------------------------------------------------------- checkout */
 .checkout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; align-items: start; }

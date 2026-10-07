@@ -259,7 +259,7 @@ export function TicketView({ d, tab, onTab, readOnly }) {
                   <div className="person">
                     <AvatarStack people={people.filter((p) => p.source === 'staff')} max={3} size={30} />
                     <div className="grow">
-                      <div className="person-name">{plural(people.filter((p) => p.source === 'staff').length, 'staff member')}</div>
+                      <div className="person-name">{people.filter((p) => p.source === 'staff').length} staff</div>
                       <div className="person-role">From the Staff step · Can view</div>
                     </div>
                     {visible.includes('staff') ? <Button size="sm" variant="quiet" onClick={() => onTab('staff')}>See all</Button> : null}
