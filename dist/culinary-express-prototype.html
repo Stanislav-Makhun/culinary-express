@@ -180,6 +180,10 @@ textarea.input:focus, select.input:focus { border-color: var(--ink); box-shadow:
 .counter-btn:hover:not(:disabled) { background: var(--surface-2); }
 .counter-btn:disabled { opacity: .3; cursor: default; }
 .counter-val { width: 44px; text-align: center; border: 0; background: none; font: 500 15px var(--mono); font-variant-numeric: tabular-nums; outline: none; color: var(--ink); }
+.field > .counter { display: flex; width: 100%; height: 46px; border-radius: 10px; justify-content: space-between; }
+.field > .counter .counter-btn { width: 46px; height: 44px; border-radius: 9px; }
+.field > .counter .counter-val { flex: 1 1 auto; min-width: 0; font-size: 16px; }
+.field > .counter:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(156, 125, 75, 0.18); }
 
 .toggle { width: 46px; height: 28px; border-radius: 999px; border: 0; background: var(--hair-2); position: relative; cursor: pointer; flex: none; transition: background .2s; }
 .toggle.is-on { background: var(--ink); }
